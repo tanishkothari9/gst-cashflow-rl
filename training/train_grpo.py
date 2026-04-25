@@ -407,6 +407,9 @@ def _score_completion(completion: str, prompt: str) -> float:
     return -1.0  # Unknown / catch-all
 
 
+_reward_debug_count = 0
+
+
 def gst_reward_fn(
     completions: List[str],
     prompts: Optional[List[str]] = None,
@@ -430,6 +433,7 @@ def gst_reward_fn(
       DO_NOTHING: -10 to -0.5
       Malformed JSON: -10
     """
+    global _reward_debug_count
     rewards: List[float] = []
 
     for i, completion in enumerate(completions):
@@ -438,7 +442,27 @@ def gst_reward_fn(
             reward = _score_completion(completion, prompt)
         except Exception:
             reward = -10.0
+
+        # Deterministic content-diversity tiebreaker — guarantees non-zero variance
+        # even when all completions have the same action_type.
+        # abs(hash) % 1000 gives 0–999; divide by 100_000 → ±0.01 max.
+        # This is tiny enough to not affect learning direction but breaks exact ties
+        # so TRL's std-normalization never sees std=0 → loss never collapses to 0.
+        reward += (abs(hash(completion)) % 1000) / 100_000.0
+
         rewards.append(reward)
+
+    # Debug first 3 batches so training logs show reward values
+    if _reward_debug_count < 3:
+        import statistics as _st
+        std = _st.stdev(rewards) if len(rewards) > 1 else 0.0
+        print(
+            f"\n[reward_fn batch {_reward_debug_count + 1}] "
+            f"rewards={[round(r, 3) for r in rewards]}  std={std:.4f}"
+        )
+        for j, (c, r) in enumerate(zip(completions, rewards)):
+            print(f"  [{j}] {c[:70].strip()!r}  →  {r:+.3f}")
+        _reward_debug_count += 1
 
     return rewards
 
@@ -648,6 +672,7 @@ def train(
             gradient_accumulation_steps=max(1, 16 // batch_size),
             warmup_ratio=0.05,
             lr_scheduler_type="cosine",
+            temperature=1.0,  # must be > 0 so 8 completions are sampled diversely
         )
 
         trainer = GRPOTrainer(
