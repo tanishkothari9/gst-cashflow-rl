@@ -2,10 +2,10 @@
 FastAPI application for the GST Cash Flow Optimization Environment.
 
 Endpoints:
+    GET  /health — Liveness probe (used by Docker HEALTHCHECK and HF Spaces)
     POST /reset  — Reset the environment and return initial observation
     POST /step   — Execute an action and return next observation
     GET  /state  — Get current episode state
-    GET  /schema — Get action/observation schemas
     WS   /ws     — WebSocket endpoint for persistent concurrent sessions
 
 Usage:
@@ -25,6 +25,13 @@ app = create_app(
     env_name="gst-cashflow-env",
     max_concurrent_envs=64,
 )
+
+
+# Health endpoint — required by both Docker HEALTHCHECK and HF Spaces routing.
+# create_app does not add one, so we add it here on the returned FastAPI instance.
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "env": "gst-cashflow-env"}
 
 
 def main(host: str = "0.0.0.0", port: int = 8000) -> None:
