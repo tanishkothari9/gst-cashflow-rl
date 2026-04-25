@@ -1,0 +1,11 @@
+*.pdf
+*.csv
+PROMPT.md
+hackathon_project_instructions.md
+previous_winners.csv
+__pycache__/
+*.pyc
+.DS_Store
+checkpoints/
+*.egg-info/
+.env
