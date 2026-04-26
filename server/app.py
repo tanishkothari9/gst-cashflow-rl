@@ -108,7 +108,8 @@ async def step(request: StepRequest = Body(...)) -> dict:
             env = _sessions[episode_id]
         elif _sessions:
             # Fall back to most-recently created session
-            env = next(reversed(_sessions))  # type: ignore[call-overload]
+            last_key = next(reversed(_sessions))
+            env = _sessions[last_key]
         else:
             return {"error": "No active session. Call /reset first.", "done": True}
 
