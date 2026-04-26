@@ -2,19 +2,15 @@
 FastAPI application for the GST Cash Flow Optimization Environment.
 
 Endpoints:
-    GET  /health — Liveness probe (used by Docker HEALTHCHECK and HF Spaces)
-    POST /reset  — Reset the environment and return initial observation
-    POST /step   — Execute an action and return next observation
-    GET  /state  — Get current episode state
-    WS   /ws     — WebSocket endpoint for persistent concurrent sessions
+    GET  /health — Liveness probe
+    POST /reset  — Reset environment, returns initial observation
+    POST /step   — Execute action, returns next observation
+    GET  /state  — Current episode state
+    WS   /ws     — WebSocket for persistent concurrent sessions
 
-The /reset and /step routes override the OpenEnv defaults because the
-OpenEnv HTTP server is stateless (creates a fresh env per request). We
-maintain a single persistent GSTEnvironment instance per session keyed
-by episode_id so that state is preserved between reset and step calls.
-
-Usage:
-    uvicorn server.app:app --host 0.0.0.0 --port 8000
+The OpenEnv HTTP server is stateless (fresh env per request), so /step
+would always get ledger=None. We remove OpenEnv's /reset and /step routes
+and replace them with stateful session-aware handlers.
 """
 
 from __future__ import annotations
@@ -30,6 +26,7 @@ from gst_cashflow_env.models import GSTAction, GSTObservation
 from server.gst_environment import GSTEnvironment
 
 
+# Build the base app (provides /ws, /state, /schema, /metadata)
 app = create_app(
     GSTEnvironment,
     GSTAction,
@@ -38,11 +35,15 @@ app = create_app(
     max_concurrent_envs=64,
 )
 
+# Remove OpenEnv's stateless /reset and /step so ours take priority
+_OVERRIDE = {"/reset", "/step", "/health"}
+app.routes[:] = [
+    r for r in app.routes
+    if not (hasattr(r, "path") and r.path in _OVERRIDE)
+]
 
 # ---------------------------------------------------------------------------
-# Session store — maps episode_id → GSTEnvironment instance
-# The OpenEnv HTTP server is stateless (new env per request); we fix this
-# by keeping live env instances here and routing by episode_id.
+# Session store — episode_id → live GSTEnvironment instance
 # ---------------------------------------------------------------------------
 
 _sessions: Dict[str, GSTEnvironment] = {}
@@ -51,14 +52,12 @@ _MAX_SESSIONS = 64
 
 
 def _evict_oldest() -> None:
-    """Remove the oldest session when the store is full."""
     if _sessions:
-        oldest = next(iter(_sessions))
-        del _sessions[oldest]
+        del _sessions[next(iter(_sessions))]
 
 
 # ---------------------------------------------------------------------------
-# Request / response models
+# Request models
 # ---------------------------------------------------------------------------
 
 class ResetRequest(BaseModel):
@@ -73,16 +72,19 @@ class StepRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Overridden /reset and /step — stateful, session-aware
+# Routes
 # ---------------------------------------------------------------------------
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok", "env": "gst-cashflow-env", "active_sessions": len(_sessions)}
+
 
 @app.post("/reset")
 async def reset(request: ResetRequest = Body(default_factory=ResetRequest)) -> dict:
-    """Reset the environment and return the initial observation."""
     async with _sessions_lock:
         if len(_sessions) >= _MAX_SESSIONS:
             _evict_oldest()
-
         env = GSTEnvironment(difficulty=request.difficulty or "L1")
         obs = env.reset(seed=request.seed, episode_id=request.episode_id)
         _sessions[obs.episode_id] = env
@@ -96,33 +98,26 @@ async def reset(request: ResetRequest = Body(default_factory=ResetRequest)) -> d
 
 @app.post("/step")
 async def step(request: StepRequest = Body(...)) -> dict:
-    """Execute an action and return the next observation."""
-    action_data = request.action
-
-    # Resolve which env session to use
     episode_id = request.episode_id
-    env: Optional[GSTEnvironment] = None
 
     async with _sessions_lock:
         if episode_id and episode_id in _sessions:
             env = _sessions[episode_id]
         elif _sessions:
-            # Fall back to most-recently created session
             last_key = next(reversed(_sessions))
             env = _sessions[last_key]
+            episode_id = last_key
         else:
-            return {"error": "No active session. Call /reset first.", "done": True}
+            return {"error": "No active session — call /reset first.", "done": True}
 
-    # Parse action
     try:
-        action = GSTAction.model_validate(action_data)
+        action = GSTAction.model_validate(request.action)
     except Exception as exc:
         return {"error": f"Invalid action: {exc}", "done": False}
 
     obs = env.step(action)
 
-    # Clean up terminated sessions
-    if obs.done and episode_id and episode_id in _sessions:
+    if obs.done:
         async with _sessions_lock:
             _sessions.pop(episode_id, None)
 
@@ -131,15 +126,6 @@ async def step(request: StepRequest = Body(...)) -> dict:
         "reward": obs.reward,
         "done": obs.done,
     }
-
-
-# ---------------------------------------------------------------------------
-# Health endpoint — required by Docker HEALTHCHECK and HF Spaces
-# ---------------------------------------------------------------------------
-
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "env": "gst-cashflow-env", "active_sessions": len(_sessions)}
 
 
 def main(host: str = "0.0.0.0", port: int = 8000) -> None:
