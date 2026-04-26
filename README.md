@@ -10,9 +10,10 @@ pinned: false
 
 # GST Cash Flow Optimization — RL Environment
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tanishkothari/gst-cashflow-env/blob/main/training/train_grpo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/tanishkothari9/gst-cashflow-rl/blob/master/training/train_grpo.ipynb)
 [![HuggingFace Space](https://img.shields.io/badge/🤗-Space-yellow)](https://huggingface.co/spaces/tanishkothari/gst-cashflow-env)
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-0.2.x-blue)](https://github.com/meta-pytorch/OpenEnv)
+[![GitHub](https://img.shields.io/badge/GitHub-Source-black)](https://github.com/tanishkothari9/gst-cashflow-rl)
 
 > **An AI agent that learns to sequence business transactions — deciding WHEN to buy, WHEN to sell, and WHEN to pay vendors — to legally minimize GST outflow for Indian SMEs. Built on the OpenEnv framework with GRPO training.**
 
@@ -48,13 +49,23 @@ print(f"Reward: {result['reward']:.2f} | ITC secured: ₹{result['itc_secured_so
 
 ## Benchmark Results — GRPO Training (L1 + L2, 50 Episodes Each)
 
-| Agent | Avg Reward | Net GST Paid | ITC Utilization | Filing Day |
-|-------|------------|--------------|-----------------|------------|
-| Random | -42.3 | ₹48,200 | 18% | Day 22 |
-| Greedy | +31.7 | ₹28,600 | 52% | Day 19 |
-| **GRPO (Ours)** | **+89.4** | **₹11,800** | **81%** | **Day 18** |
+**L1 — Easy (₹8L cash, 3 sales, 2 vendors, 10 days)**
 
-*Trained: Qwen2.5-0.5B-Instruct + LoRA (r=16) · 8 GRPO generations · LR=2e-6 · T4 GPU*
+| Agent | Avg Reward | Net GST Paid | ITC Utilization | Cash Remaining |
+|-------|------------|--------------|-----------------|----------------|
+| Random | 345.7 | ₹23,443 | 92.5% | ₹9,49,967 |
+| Greedy | 360.2 | ₹21,320 | 98.4% | ₹9,47,202 |
+| **GRPO (Ours)** | **—** | **—** | **—** | **—** |
+
+**L2 — Moderate (₹4L cash, 6 sales, 4 vendors, 15 days)**
+
+| Agent | Avg Reward | Net GST Paid | ITC Utilization | Cash Remaining |
+|-------|------------|--------------|-----------------|----------------|
+| Random | 408.9 | ₹49,516 | 78.2% | ₹6,51,972 |
+| Greedy | 416.6 | ₹61,236 | 88.2% | ₹7,33,326 |
+| **GRPO (Ours)** | **—** | **—** | **—** | **—** |
+
+*GRPO agent evaluation in progress. Trained: Qwen2.5-0.5B-Instruct + LoRA (r=16) · 8 GRPO generations · LR=2e-6 · T4 GPU*
 
 ![Reward Curve](assets/reward_curve.png)
 
@@ -1252,8 +1263,9 @@ India's GST system is uniquely data-rich and rule-based — making it ideal for 
 | Resource | URL |
 |---------|-----|
 | HuggingFace Space | https://huggingface.co/spaces/tanishkothari/gst-cashflow-env |
-| Training Notebook | `training/train_grpo.ipynb` (run in Colab) |
-| OpenEnv GitHub | https://github.com/meta-pytorch/OpenEnv |
+| Training Notebook (Colab) | https://colab.research.google.com/github/tanishkothari9/gst-cashflow-rl/blob/master/training/train_grpo.ipynb |
+| GitHub Source | https://github.com/tanishkothari9/gst-cashflow-rl |
+| OpenEnv Framework | https://github.com/meta-pytorch/OpenEnv |
 
 ---
 
